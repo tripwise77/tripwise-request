@@ -1,0 +1,8 @@
+{
+  "name": "tripwisego-netlify-functions",
+  "version": "1.0.0",
+  "description": "Netlify Functions for TripwiseGO Feature Requests",
+  "dependencies": {
+    "googleapis": "^126.0.1"
+  }
+}

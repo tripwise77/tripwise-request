@@ -1,0 +1,23 @@
+[build]
+  publish = "."
+  command = "echo 'Static site build complete'"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# Redirect API calls to external backend (you need to update this URL)
+[[redirects]]
+  from = "/api/*"
+  to = "https://your-backend-app.herokuapp.com/api/:splat"
+  status = 200
+  force = true
+
+# Fallback for SPA
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[functions]
+  # If you want to use Netlify Functions instead
+  directory = "netlify/functions"

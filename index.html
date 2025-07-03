@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TripwiseGO Feature Requests</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        .transition-all {
+            transition: all 0.3s ease;
+        }
+
+        .post-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .post-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        .vote-button {
+            transition: color 0.2s ease, transform 0.2s ease;
+        }
+
+        .vote-button:hover {
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+
+<body class="bg-white text-gray-800 transition-all min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <!-- Header -->
+        <header class="mb-8">
+            <div class="flex justify-between items-start">
+                <div class="flex flex-col items-start">
+                    <img src="logo_blue.png" alt="TripwiseGO Logo" class="h-12 w-auto mb-2" onerror="this.style.display='none'; document.getElementById('fallback-text').style.display='block';">
+                    <h1 id="fallback-text" class="text-3xl font-bold text-indigo-600 dark:text-indigo-400 mb-2" style="display: none;">TripwiseGO</h1>
+                    <p class="text-gray-600 dark:text-gray-400">Feature Requests</p>
+                </div>
+                <div id="connection-status" class="text-sm px-3 py-1 rounded-full">
+                    <!-- Status will be updated by JavaScript -->
+                </div>
+            </div>
+        </header>
+
+        <!-- Add Feature Button and Sort Controls -->
+        <div class="flex justify-end items-center mb-8">
+            <div class="flex items-center space-x-2">
+                <span class="text-sm text-gray-600 dark:text-gray-400">Sort by:</span>
+                <select id="sort-select" class="px-3 py-1 border border-gray-300 rounded-md bg-white text-sm">
+                    <option value="votes">Most Voted</option>
+                    <option value="newest">Newest First</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Feature Request Modal -->
+        <div id="feature-modal"
+            class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+            <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4 transition-all">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">Suggest a new feature</h2>
+                    <button id="close-modal-btn" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <form id="feature-form" class="space-y-4">
+                    <div>
+                        <label for="title"
+                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title</label>
+                        <input type="text" id="title" name="title" required
+                            class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label for="description"
+                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                        <textarea id="description" name="description" rows="3" required
+                            class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+                    </div>
+                    <button type="submit"
+                        class="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-all flex items-center justify-center">
+                        <i class="fas fa-plus mr-2"></i> Submit Feature Request
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Feature Requests List -->
+        <div id="feature-list" class="space-y-4">
+            <!-- Feature cards will be dynamically inserted here -->
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="text-center py-12">
+            <i class="fas fa-lightbulb text-5xl text-gray-400 mb-4"></i>
+            <h3 class="text-xl font-medium text-gray-600">No feature requests yet</h3>
+            <p class="text-gray-500 mt-2">Be the first to suggest an improvement for TripwiseGO!</p>
+        </div>
+    </div>
+
+    <!-- Floating Action Button -->
+    <button id="open-form-btn"
+        class="fixed bottom-8 right-8 w-16 h-16 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg transition-all flex items-center justify-center z-40">
+        <i class="fas fa-plus text-2xl"></i>
+    </button>
+
+    <script>
+        // API Configuration - automatically detects environment
+        const API_CONFIG = {
+            // Try to detect if we're running locally or deployed
+            getBaseURL: function() {
+                const hostname = window.location.hostname;
+                const protocol = window.location.protocol;
+                const port = window.location.port;
+
+                // If running on localhost with port 3000, use local Node.js server
+                if (hostname === 'localhost' && port === '3000') {
+                    return `${protocol}//${hostname}:${port}`;
+                }
+
+                // For Netlify deployment, use Netlify Functions
+                if (hostname.includes('netlify.app') || hostname.includes('netlify.com')) {
+                    return `${protocol}//${hostname}/.netlify/functions`;
+                }
+
+                // For other deployments, try same domain with Netlify Functions path
+                return `${protocol}//${hostname}${port ? ':' + port : ''}/.netlify/functions`;
+            },
+
+            // Get full API endpoint URL
+            getEndpoint: function(path) {
+                const baseURL = this.getBaseURL();
+
+                // For Netlify Functions, remove '/api' prefix since functions are named directly
+                if (baseURL.includes('/.netlify/functions')) {
+                    // Convert /api/health to /health, /api/upload-feature to /upload-feature, etc.
+                    return baseURL + path.replace('/api', '');
+                }
+
+                // For local Node.js server, keep the /api prefix
+                return baseURL + path;
+            }
+        };
+
+        // Feature request data
+        let features = JSON.parse(localStorage.getItem('tripwisego-features')) || [];
+        // DOM elements
+        const featureForm = document.getElementById('feature-form');
+        const featureList = document.getElementById('feature-list');
+        const emptyState = document.getElementById('empty-state');
+        // DOM elements
+        const openFormBtn = document.getElementById('open-form-btn');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const featureModal = document.getElementById('feature-modal');
+        const sortSelect = document.getElementById('sort-select');
+        // Display features
+        function displayFeatures() {
+            featureList.innerHTML = '';
+
+            if (features.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+
+            // Sort features based on selected option
+            const sortBy = sortSelect.value;
+            let sortedFeatures = [...features];
+
+            if (sortBy === 'votes') {
+                sortedFeatures.sort((a, b) => (b.votes || 0) - (a.votes || 0));
+            } else {
+                sortedFeatures.sort((a, b) => new Date(b.date) - new Date(a.date));
+            }
+
+            sortedFeatures.forEach((feature, index) => {
+                const featureCard = document.createElement('div');
+                featureCard.className = `post-card bg-white rounded-lg shadow-md p-6 transition-all duration-300 ease-in-out`;
+                featureCard.innerHTML = `
+                    <div class="flex items-start">
+                        <div class="flex flex-col items-center mr-4">
+                            <button class="vote-button text-gray-500 hover:text-indigo-600" data-id="${feature.id}" data-vote="up">
+                                <i class="fas fa-arrow-up text-xl"></i>
+                            </button>
+                            <span class="my-1 font-semibold text-gray-700 dark:text-gray-300">${feature.votes || 0}</span>
+                            <button class="vote-button text-gray-500 hover:text-red-600" data-id="${feature.id}" data-vote="down">
+                                <i class="fas fa-arrow-down text-xl"></i>
+                            </button>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="text-lg font-semibold mb-1">${feature.title}</h3>
+                            <p class="text-gray-600 dark:text-gray-400 mb-3">${feature.description}</p>
+                            <div class="flex items-center text-sm text-gray-500 dark:text-gray-500">
+                                <span>Posted ${formatDate(feature.date)}</span>
+                                <span class="mx-2">•</span>
+                                ${feature.creatorId === localStorage.getItem('tripwisego-user-id') ?
+                        `<button class="text-indigo-600 hover:underline" data-id="${feature.id}" data-action="delete">
+                                    <i class="fas fa-trash mr-1"></i> Delete
+                                </button>` : ''}
+                            </div>
+                        </div>
+                        ${sortSelect.value === 'votes' && index === 0 && (feature.votes || 0) > 0 ? '<div class="ml-4 bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full text-xs font-semibold">Top Voted</div>' : ''}
+                    </div>
+                `;
+                featureList.appendChild(featureCard);
+            });
+
+            // Add event listeners to vote buttons
+            document.querySelectorAll('.vote-button').forEach(button => {
+                button.addEventListener('click', handleVote);
+            });
+
+            // Add event listeners to delete buttons
+            document.querySelectorAll('[data-action="delete"]').forEach(button => {
+                button.addEventListener('click', handleDelete);
+            });
+        }
+        // Format date
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffInSeconds = Math.floor((now - date) / 1000);
+
+            if (diffInSeconds < 60) return `${diffInSeconds} seconds ago`;
+            if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
+            if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
+            return `${Math.floor(diffInSeconds / 86400)} days ago`;
+        }
+        // Global variable to track server connectivity
+        let isServerAvailable = false;
+
+        // Check server connectivity by testing the health endpoint
+        async function checkServerConnectivity() {
+            try {
+                console.log('Checking server connectivity at:', API_CONFIG.getEndpoint('/api/health'));
+
+                const response = await fetch(API_CONFIG.getEndpoint('/api/health'), {
+                    method: 'GET',
+                    headers: {
+                        'Cache-Control': 'no-cache'
+                    },
+                    signal: AbortSignal.timeout(10000) // 10 second timeout
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    isServerAvailable = result.status === 'OK';
+                    console.log('Server connectivity check successful:', isServerAvailable);
+                    return isServerAvailable;
+                }
+                console.log('Server connectivity check failed: HTTP', response.status);
+                return false;
+            } catch (error) {
+                console.log('Server connectivity check failed:', error.message);
+                isServerAvailable = false;
+                return false;
+            }
+        }
+
+        // Load features from backend API (server-only)
+        async function loadFeaturesFromAPI() {
+            try {
+                console.log('Loading features from:', API_CONFIG.getEndpoint('/api/features'));
+
+                const response = await fetch(API_CONFIG.getEndpoint('/api/features'), {
+                    headers: {
+                        'Cache-Control': 'no-cache'
+                    },
+                    signal: AbortSignal.timeout(10000) // 10 second timeout
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                if (result.success && result.data) {
+                    features = result.data.map(feature => ({
+                        id: feature.id,
+                        title: feature.title,
+                        description: feature.description,
+                        votes: parseInt(feature.votes) || 0,
+                        date: feature.date,
+                        creatorId: feature.creatorId || 'api-user'
+                    }));
+                    // Only save to localStorage for display purposes, not as primary storage
+                    localStorage.setItem('tripwisego-features-cache', JSON.stringify(features));
+                    displayFeatures();
+                    console.log('Features loaded from API successfully');
+                } else {
+                    throw new Error('Invalid API response');
+                }
+            } catch (error) {
+                console.error('Error loading features from API:', error);
+                // Load cached data for display only (no new submissions will be saved locally)
+                const cachedFeatures = localStorage.getItem('tripwisego-features-cache');
+                if (cachedFeatures) {
+                    features = JSON.parse(cachedFeatures);
+                    displayFeatures();
+                    console.log('Displaying cached features (read-only mode)');
+                } else {
+                    displayFeatures(); // Show empty state
+                }
+            }
+        }
+
+        // Save feature to backend API (server-only, no fallback)
+        async function saveToAPI(feature) {
+            try {
+                console.log('Uploading feature to:', API_CONFIG.getEndpoint('/api/upload-feature'));
+
+                const response = await fetch(API_CONFIG.getEndpoint('/api/upload-feature'), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Cache-Control': 'no-cache'
+                    },
+                    body: JSON.stringify({
+                        title: feature.title,
+                        description: feature.description,
+                        creatorId: feature.creatorId
+                    }),
+                    signal: AbortSignal.timeout(15000) // 15 second timeout for uploads
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Server error (${response.status}): ${errorText}`);
+                }
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.error || 'Failed to save feature to spreadsheet');
+                }
+
+                console.log('Feature saved to Google Spreadsheet:', result);
+                return result.data;
+            } catch (error) {
+                console.error('Error saving to API:', error);
+                // Re-throw the error to be handled by the calling function
+                throw new Error(`Failed to upload to Google Spreadsheet: ${error.message}`);
+            }
+        }
+        // Handle form submission (server-only, no localStorage fallback)
+        featureForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const title = document.getElementById('title').value.trim();
+            const description = document.getElementById('description').value.trim();
+
+            if (!title || !description) {
+                showNotification('Please fill in all fields', 'error');
+                return;
+            }
+
+            // Check server connectivity first
+            if (!isServerAvailable) {
+                showNotification('Server is not available. Please check your internet connection and try again.', 'error');
+                return;
+            }
+
+            // Show loading state
+            const submitButton = e.target.querySelector('button[type="submit"]');
+            const originalText = submitButton.innerHTML;
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Uploading to Spreadsheet...';
+            submitButton.disabled = true;
+
+            try {
+                // Get or create user ID (only for identification, not for local storage)
+                let userId = localStorage.getItem('tripwisego-user-id');
+                if (!userId) {
+                    userId = Date.now().toString();
+                    localStorage.setItem('tripwisego-user-id', userId);
+                }
+
+                const newFeature = {
+                    id: Date.now().toString(),
+                    title: title,
+                    description: description,
+                    votes: 0,
+                    date: new Date().toISOString(),
+                    creatorId: userId
+                };
+
+                // ONLY save to API - no localStorage fallback for feature data
+                const savedFeature = await saveToAPI(newFeature);
+
+                // Update local display cache (not primary storage)
+                features.unshift(savedFeature);
+                localStorage.setItem('tripwisego-features-cache', JSON.stringify(features));
+                displayFeatures();
+
+                // Reset form and close modal
+                featureForm.reset();
+                featureModal.classList.add('hidden');
+
+                // Show success message
+                showNotification('Feature request uploaded to Google Spreadsheet successfully!', 'success');
+
+                // Scroll to the new feature
+                setTimeout(() => {
+                    const firstCard = document.querySelector('.post-card');
+                    if (firstCard) {
+                        firstCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                }, 100);
+
+            } catch (error) {
+                console.error('Error submitting feature:', error);
+
+                // Show specific error message
+                let errorMessage = 'Failed to upload feature request to Google Spreadsheet.';
+                if (error.message.includes('Failed to fetch')) {
+                    errorMessage = 'Network error: Unable to connect to server. Please check your internet connection.';
+                } else if (error.message.includes('Server error')) {
+                    errorMessage = 'Server error: ' + error.message;
+                } else {
+                    errorMessage = error.message || errorMessage;
+                }
+
+                showNotification(errorMessage, 'error');
+
+                // Re-check server connectivity for next attempt
+                checkServerConnectivity();
+
+            } finally {
+                // Reset button state
+                submitButton.innerHTML = originalText;
+                submitButton.disabled = false;
+            }
+        });
+        // Update connection status indicator
+        function updateConnectionStatus() {
+            const statusElement = document.getElementById('connection-status');
+            if (isServerAvailable) {
+                statusElement.innerHTML = '<i class="fas fa-cloud mr-1"></i> Server Connected';
+                statusElement.className = 'text-sm px-3 py-1 rounded-full bg-green-100 text-green-800';
+            } else {
+                statusElement.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i> Server Unavailable';
+                statusElement.className = 'text-sm px-3 py-1 rounded-full bg-red-100 text-red-800';
+            }
+        }
+
+        // Initialize the application
+        async function initializeApp() {
+            // Check server connectivity first
+            await checkServerConnectivity();
+            updateConnectionStatus();
+
+            if (isServerAvailable) {
+                await loadFeaturesFromAPI();
+            } else {
+                // Show cached data if available, but in read-only mode
+                const cachedFeatures = localStorage.getItem('tripwisego-features-cache');
+                if (cachedFeatures) {
+                    features = JSON.parse(cachedFeatures);
+                    displayFeatures();
+                    showNotification('Server unavailable. Showing cached data (read-only mode).', 'error');
+                } else {
+                    displayFeatures(); // Show empty state
+                    showNotification('Server unavailable. Cannot load or submit feature requests.', 'error');
+                }
+            }
+        }
+
+        // Periodically check server connectivity (every 30 seconds)
+        setInterval(async () => {
+            const wasAvailable = isServerAvailable;
+            await checkServerConnectivity();
+
+            if (wasAvailable !== isServerAvailable) {
+                updateConnectionStatus();
+                if (isServerAvailable) {
+                    showNotification('Server connection restored!', 'success');
+                    loadFeaturesFromAPI();
+                } else {
+                    showNotification('Server connection lost.', 'error');
+                }
+            }
+        }, 30000);
+
+        // Load features from API on page load
+        initializeApp();
+
+        // Notification system
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg text-white transition-all duration-300 transform translate-x-full`;
+
+            if (type === 'success') {
+                notification.classList.add('bg-green-500');
+            } else if (type === 'error') {
+                notification.classList.add('bg-red-500');
+            } else {
+                notification.classList.add('bg-blue-500');
+            }
+
+            notification.innerHTML = `
+                <div class="flex items-center">
+                    <i class="fas fa-${type === 'success' ? 'check' : type === 'error' ? 'exclamation-triangle' : 'info'} mr-2"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+
+            document.body.appendChild(notification);
+
+            // Animate in
+            setTimeout(() => {
+                notification.classList.remove('translate-x-full');
+            }, 100);
+
+            // Animate out and remove
+            setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
+        }
+        // Handle voting (disabled - server-only mode)
+        function handleVote(e) {
+            if (!isServerAvailable) {
+                showNotification('Server unavailable. Voting is disabled.', 'error');
+                return;
+            }
+
+            // Note: In a full implementation, this would make an API call to update votes
+            // For now, we'll disable voting to maintain server-only functionality
+            showNotification('Voting functionality requires server-side implementation.', 'error');
+        }
+
+        // Handle deletion (disabled - server-only mode)
+        function handleDelete(e) {
+            if (!isServerAvailable) {
+                showNotification('Server unavailable. Deletion is disabled.', 'error');
+                return;
+            }
+
+            // Note: In a full implementation, this would make an API call to delete from spreadsheet
+            // For now, we'll disable deletion to maintain server-only functionality
+            showNotification('Deletion functionality requires server-side implementation.', 'error');
+        }
+        // Modal handling
+        openFormBtn.addEventListener('click', () => {
+            featureModal.classList.remove('hidden');
+        });
+        closeModalBtn.addEventListener('click', () => {
+            featureModal.classList.add('hidden');
+        });
+        // Close modal when clicking outside
+        featureModal.addEventListener('click', (e) => {
+            if (e.target === featureModal) {
+                featureModal.classList.add('hidden');
+            }
+        });
+        // Sort change handler
+        sortSelect.addEventListener('change', displayFeatures);
+        // Initial display
+        displayFeatures();
+    </script>
+
+</body>
+
+</html>
