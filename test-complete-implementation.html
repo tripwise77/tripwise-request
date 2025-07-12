@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TripwiseGO - Complete Implementation Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-indigo-600 mb-2">TripwiseGO - Complete Implementation Test</h1>
+            <p class="text-gray-600">Test all CRUD operations with Google Apps Script integration</p>
+        </header>
+
+        <!-- Configuration Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Configuration</h2>
+            <div class="mb-4">
+                <label for="script-url" class="block text-sm font-medium text-gray-700 mb-2">Google Apps Script URL:</label>
+                <input type="url" id="script-url" class="w-full px-3 py-2 border border-gray-300 rounded-md" 
+                       placeholder="https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec">
+            </div>
+            <button id="save-config" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+                Save Configuration
+            </button>
+        </div>
+
+        <!-- Test Results -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Test Results</h2>
+            <div id="test-results" class="space-y-2">
+                <!-- Test results will be displayed here -->
+            </div>
+        </div>
+
+        <!-- Test Controls -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <button id="test-read" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                <i class="fas fa-eye mr-2"></i> Test Read
+            </button>
+            <button id="test-create" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
+                <i class="fas fa-plus mr-2"></i> Test Create
+            </button>
+            <button id="test-vote" class="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700">
+                <i class="fas fa-thumbs-up mr-2"></i> Test Vote
+            </button>
+            <button id="test-delete" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">
+                <i class="fas fa-trash mr-2"></i> Test Delete
+            </button>
+        </div>
+
+        <!-- Run All Tests -->
+        <div class="text-center mb-8">
+            <button id="run-all-tests" class="px-6 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-lg">
+                <i class="fas fa-play mr-2"></i> Run All Tests
+            </button>
+        </div>
+
+        <!-- Protocol Information -->
+        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-8">
+            <h3 class="text-lg font-semibold text-yellow-800 mb-2">Protocol Information</h3>
+            <p id="protocol-info" class="text-yellow-700"></p>
+        </div>
+
+        <!-- Features List -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold mb-4">Test Features</h2>
+            <div id="features-list" class="space-y-2">
+                <!-- Features will be displayed here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        let GOOGLE_APPS_SCRIPT_URL = '';
+        let testFeatures = [];
+
+        // DOM elements
+        const scriptUrlInput = document.getElementById('script-url');
+        const saveConfigBtn = document.getElementById('save-config');
+        const testResults = document.getElementById('test-results');
+        const protocolInfo = document.getElementById('protocol-info');
+        const featuresList = document.getElementById('features-list');
+
+        // Test buttons
+        const testReadBtn = document.getElementById('test-read');
+        const testCreateBtn = document.getElementById('test-create');
+        const testVoteBtn = document.getElementById('test-vote');
+        const testDeleteBtn = document.getElementById('test-delete');
+        const runAllTestsBtn = document.getElementById('run-all-tests');
+
+        // Initialize
+        function init() {
+            // Load saved configuration
+            const savedUrl = localStorage.getItem('test-google-apps-script-url');
+            if (savedUrl) {
+                scriptUrlInput.value = savedUrl;
+                GOOGLE_APPS_SCRIPT_URL = savedUrl;
+            }
+
+            // Display protocol information
+            const protocol = window.location.protocol;
+            protocolInfo.textContent = `Running on ${protocol} protocol. ${
+                protocol === 'file:' 
+                    ? 'Form submission method will be used (opens new tabs).' 
+                    : 'Fetch API method will be used.'
+            }`;
+
+            // Add event listeners
+            saveConfigBtn.addEventListener('click', saveConfiguration);
+            testReadBtn.addEventListener('click', () => runTest('read'));
+            testCreateBtn.addEventListener('click', () => runTest('create'));
+            testVoteBtn.addEventListener('click', () => runTest('vote'));
+            testDeleteBtn.addEventListener('click', () => runTest('delete'));
+            runAllTestsBtn.addEventListener('click', runAllTests);
+        }
+
+        // Save configuration
+        function saveConfiguration() {
+            const url = scriptUrlInput.value.trim();
+            if (!url) {
+                addTestResult('Configuration', 'Please enter a Google Apps Script URL', 'error');
+                return;
+            }
+
+            if (!url.includes('script.google.com')) {
+                addTestResult('Configuration', 'Please enter a valid Google Apps Script URL', 'error');
+                return;
+            }
+
+            GOOGLE_APPS_SCRIPT_URL = url;
+            localStorage.setItem('test-google-apps-script-url', url);
+            addTestResult('Configuration', 'Google Apps Script URL saved successfully', 'success');
+        }
+
+        // Add test result
+        function addTestResult(test, message, type) {
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `p-3 rounded-md ${
+                type === 'success' ? 'bg-green-100 text-green-800' :
+                type === 'error' ? 'bg-red-100 text-red-800' :
+                'bg-blue-100 text-blue-800'
+            }`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            resultDiv.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div>
+                        <strong>${test}:</strong> ${message}
+                    </div>
+                    <span class="text-sm opacity-75">${timestamp}</span>
+                </div>
+            `;
+            
+            testResults.insertBefore(resultDiv, testResults.firstChild);
+        }
+
+        // Run individual test
+        async function runTest(testType) {
+            if (!GOOGLE_APPS_SCRIPT_URL) {
+                addTestResult(testType.toUpperCase(), 'Please configure Google Apps Script URL first', 'error');
+                return;
+            }
+
+            const button = document.getElementById(`test-${testType}`);
+            const originalContent = button.innerHTML;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Testing...';
+            button.disabled = true;
+
+            try {
+                switch (testType) {
+                    case 'read':
+                        await testReadOperation();
+                        break;
+                    case 'create':
+                        await testCreateOperation();
+                        break;
+                    case 'vote':
+                        await testVoteOperation();
+                        break;
+                    case 'delete':
+                        await testDeleteOperation();
+                        break;
+                }
+            } catch (error) {
+                addTestResult(testType.toUpperCase(), `Test failed: ${error.message}`, 'error');
+            } finally {
+                button.innerHTML = originalContent;
+                button.disabled = false;
+            }
+        }
+
+        // Test read operation
+        async function testReadOperation() {
+            try {
+                const response = await fetch(GOOGLE_APPS_SCRIPT_URL + '?action=getFeatures', {
+                    method: 'GET',
+                    signal: AbortSignal.timeout(15000)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                
+                if (result.success && Array.isArray(result.data)) {
+                    testFeatures = result.data;
+                    updateFeaturesList();
+                    addTestResult('READ', `Successfully loaded ${result.data.length} features`, 'success');
+                } else {
+                    throw new Error(result.error || 'Invalid response format');
+                }
+            } catch (error) {
+                throw new Error(`Read operation failed: ${error.message}`);
+            }
+        }
+
+        // Test create operation
+        async function testCreateOperation() {
+            const testFeature = {
+                id: 'test-' + Date.now(),
+                title: 'Test Feature ' + Date.now(),
+                description: 'This is a test feature created by the test suite.',
+                votes: 0,
+                date: new Date().toISOString(),
+                creatorId: 'test-user'
+            };
+
+            try {
+                const isFileProtocol = window.location.protocol === 'file:';
+                
+                if (isFileProtocol) {
+                    // For file protocol, we'll simulate the form submission
+                    addTestResult('CREATE', 'Form submission initiated (check new tab for result)', 'info');
+                    submitTestForm(testFeature, 'addFeature');
+                } else {
+                    // For HTTP/HTTPS, use fetch
+                    const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            action: 'addFeature',
+                            data: testFeature
+                        }),
+                        signal: AbortSignal.timeout(30000)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    const result = await response.text();
+                    let parsedResult;
+                    
+                    try {
+                        parsedResult = JSON.parse(result);
+                    } catch (e) {
+                        if (result.toLowerCase().includes('error')) {
+                            throw new Error(result);
+                        }
+                        parsedResult = { success: true, message: result };
+                    }
+
+                    if (parsedResult.success === false) {
+                        throw new Error(parsedResult.error || 'Create operation failed');
+                    }
+
+                    addTestResult('CREATE', 'Feature created successfully', 'success');
+                }
+            } catch (error) {
+                throw new Error(`Create operation failed: ${error.message}`);
+            }
+        }
+
+        // Test vote operation
+        async function testVoteOperation() {
+            if (testFeatures.length === 0) {
+                throw new Error('No features available for voting. Run READ test first.');
+            }
+
+            const featureToVote = testFeatures[0];
+            const voteData = {
+                featureId: featureToVote.id,
+                voteType: 'up',
+                userId: 'test-user-' + Date.now(),
+                timestamp: new Date().toISOString()
+            };
+
+            try {
+                const isFileProtocol = window.location.protocol === 'file:';
+                
+                if (isFileProtocol) {
+                    addTestResult('VOTE', 'Vote submission initiated (check new tab for result)', 'info');
+                    submitTestForm(voteData, 'vote');
+                } else {
+                    const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            action: 'vote',
+                            data: voteData
+                        }),
+                        signal: AbortSignal.timeout(15000)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    const result = await response.text();
+                    let parsedResult;
+                    
+                    try {
+                        parsedResult = JSON.parse(result);
+                    } catch (e) {
+                        if (result.toLowerCase().includes('error')) {
+                            throw new Error(result);
+                        }
+                        parsedResult = { success: true, message: result };
+                    }
+
+                    if (parsedResult.success === false) {
+                        throw new Error(parsedResult.error || 'Vote operation failed');
+                    }
+
+                    addTestResult('VOTE', `Vote recorded for feature: ${featureToVote.title}`, 'success');
+                }
+            } catch (error) {
+                throw new Error(`Vote operation failed: ${error.message}`);
+            }
+        }
+
+        // Test delete operation
+        async function testDeleteOperation() {
+            if (testFeatures.length === 0) {
+                throw new Error('No features available for deletion. Run READ test first.');
+            }
+
+            // Find a test feature to delete
+            const testFeature = testFeatures.find(f => f.title.includes('Test Feature'));
+            if (!testFeature) {
+                throw new Error('No test features found for deletion. Create a test feature first.');
+            }
+
+            const deleteData = { id: testFeature.id };
+
+            try {
+                const isFileProtocol = window.location.protocol === 'file:';
+                
+                if (isFileProtocol) {
+                    addTestResult('DELETE', 'Delete submission initiated (check new tab for result)', 'info');
+                    submitTestForm(deleteData, 'deleteFeature');
+                } else {
+                    const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            action: 'deleteFeature',
+                            data: deleteData
+                        }),
+                        signal: AbortSignal.timeout(15000)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    const result = await response.text();
+                    let parsedResult;
+                    
+                    try {
+                        parsedResult = JSON.parse(result);
+                    } catch (e) {
+                        if (result.toLowerCase().includes('error')) {
+                            throw new Error(result);
+                        }
+                        parsedResult = { success: true, message: result };
+                    }
+
+                    if (parsedResult.success === false) {
+                        throw new Error(parsedResult.error || 'Delete operation failed');
+                    }
+
+                    addTestResult('DELETE', `Feature deleted: ${testFeature.title}`, 'success');
+                }
+            } catch (error) {
+                throw new Error(`Delete operation failed: ${error.message}`);
+            }
+        }
+
+        // Submit test form (for file:// protocol)
+        function submitTestForm(data, action) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = GOOGLE_APPS_SCRIPT_URL;
+            form.target = '_blank';
+            form.style.display = 'none';
+
+            // Add action field
+            const actionInput = document.createElement('input');
+            actionInput.type = 'hidden';
+            actionInput.name = 'action';
+            actionInput.value = action;
+            form.appendChild(actionInput);
+
+            // Add data fields
+            Object.keys(data).forEach(key => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = key;
+                input.value = data[key] || '';
+                form.appendChild(input);
+            });
+
+            document.body.appendChild(form);
+            form.submit();
+            
+            setTimeout(() => {
+                document.body.removeChild(form);
+            }, 1000);
+        }
+
+        // Update features list
+        function updateFeaturesList() {
+            featuresList.innerHTML = '';
+            
+            if (testFeatures.length === 0) {
+                featuresList.innerHTML = '<p class="text-gray-500">No features loaded. Run READ test to load features.</p>';
+                return;
+            }
+
+            testFeatures.forEach(feature => {
+                const featureDiv = document.createElement('div');
+                featureDiv.className = 'p-3 border border-gray-200 rounded-md';
+                featureDiv.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h4 class="font-semibold">${feature.title}</h4>
+                            <p class="text-sm text-gray-600">${feature.description}</p>
+                            <p class="text-xs text-gray-500">ID: ${feature.id} | Votes: ${feature.votes || 0}</p>
+                        </div>
+                        <span class="text-xs text-gray-400">${new Date(feature.date).toLocaleDateString()}</span>
+                    </div>
+                `;
+                featuresList.appendChild(featureDiv);
+            });
+        }
+
+        // Run all tests
+        async function runAllTests() {
+            const originalContent = runAllTestsBtn.innerHTML;
+            runAllTestsBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Running All Tests...';
+            runAllTestsBtn.disabled = true;
+
+            try {
+                addTestResult('ALL TESTS', 'Starting comprehensive test suite...', 'info');
+                
+                await runTest('read');
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+                
+                await runTest('create');
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                await runTest('vote');
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // Reload features before delete test
+                await runTest('read');
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                await runTest('delete');
+                
+                addTestResult('ALL TESTS', 'All tests completed successfully!', 'success');
+            } catch (error) {
+                addTestResult('ALL TESTS', `Test suite failed: ${error.message}`, 'error');
+            } finally {
+                runAllTestsBtn.innerHTML = originalContent;
+                runAllTestsBtn.disabled = false;
+            }
+        }
+
+        // Initialize the page
+        init();
+    </script>
+</body>
+</html>

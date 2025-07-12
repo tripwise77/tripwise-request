@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TripwiseGO Voting System Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .vote-demo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .vote-buttons {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-right: 15px;
+        }
+        .vote-button {
+            background: none;
+            border: none;
+            color: #666;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 5px;
+            margin: 2px;
+        }
+        .vote-button:hover {
+            transform: scale(1.1);
+        }
+        .vote-count {
+            font-weight: bold;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>TripwiseGO Voting System Test</h1>
+        
+        <div class="test-section">
+            <h3>Protocol Information</h3>
+            <p><strong>Current Protocol:</strong> <span id="protocol"></span></p>
+            <p><strong>Apps Script URL:</strong> https://script.google.com/macros/s/AKfycbxor12M8pVKFLGGJ-EUyVUHPjmIUcSiilZOPimrQkprIgmWlG-X39If1naWcPp13jSB/exec</p>
+            <p><strong>User ID:</strong> <span id="user-id"></span></p>
+        </div>
+
+        <div class="test-section">
+            <h3>Test 1: Vote Submission (JSON)</h3>
+            <button onclick="testVoteJSON()">Test JSON Vote Submission</button>
+            <div id="json-vote-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>Test 2: Vote Submission (FormData)</h3>
+            <button onclick="testVoteFormData()">Test FormData Vote Submission</button>
+            <div id="formdata-vote-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>Test 3: Duplicate Vote Prevention</h3>
+            <button onclick="testDuplicateVote()">Test Duplicate Vote</button>
+            <div id="duplicate-vote-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>Test 4: Vote Demo Interface</h3>
+            <p>This simulates the actual voting interface:</p>
+            
+            <div class="vote-demo">
+                <div class="vote-buttons">
+                    <button class="vote-button" onclick="demoVote('test-feature-1', 'up')">▲</button>
+                    <div class="vote-count" id="vote-count-1">5</div>
+                    <button class="vote-button" onclick="demoVote('test-feature-1', 'down')">▼</button>
+                </div>
+                <div>
+                    <h4>Test Feature Request</h4>
+                    <p>This is a demo feature for testing the voting system.</p>
+                </div>
+            </div>
+            
+            <div id="demo-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>Test 5: Vote Statistics</h3>
+            <button onclick="showVoteStats()">Show Vote Statistics</button>
+            <button onclick="clearVoteData()">Clear Vote Data</button>
+            <div id="stats-result" class="result"></div>
+        </div>
+    </div>
+
+    <script>
+        // Display current protocol and user info
+        document.getElementById('protocol').textContent = window.location.protocol;
+        
+        const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxor12M8pVKFLGGJ-EUyVUHPjmIUcSiilZOPimrQkprIgmWlG-X39If1naWcPp13jSB/exec';
+        
+        // Generate user ID
+        function getUserId() {
+            let userId = localStorage.getItem('tripwisego-user-id');
+            if (!userId) {
+                userId = 'test-user-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('tripwisego-user-id', userId);
+            }
+            return userId;
+        }
+        
+        document.getElementById('user-id').textContent = getUserId();
+        
+        function showResult(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = `result ${type}`;
+        }
+
+        async function testVoteJSON() {
+            const button = event.target;
+            button.disabled = true;
+            button.textContent = 'Testing...';
+            
+            try {
+                const voteData = {
+                    action: 'vote',
+                    data: {
+                        featureId: 'test-feature-json-' + Date.now(),
+                        voteType: 'up',
+                        userId: getUserId(),
+                        timestamp: new Date().toISOString()
+                    }
+                };
+                
+                showResult('json-vote-result', 'Sending JSON vote request...', 'info');
+                
+                const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(voteData),
+                    mode: 'cors'
+                });
+                
+                const result = await response.text();
+                showResult('json-vote-result', `Response (${response.status}):\n${result}`, response.ok ? 'success' : 'error');
+                
+            } catch (error) {
+                showResult('json-vote-result', `Error: ${error.message}`, 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Test JSON Vote Submission';
+            }
+        }
+
+        async function testVoteFormData() {
+            const button = event.target;
+            button.disabled = true;
+            button.textContent = 'Testing...';
+            
+            try {
+                showResult('formdata-vote-result', 'Sending FormData vote request...', 'info');
+                
+                const formData = new FormData();
+                formData.append('action', 'vote');
+                formData.append('featureId', 'test-feature-form-' + Date.now());
+                formData.append('voteType', 'down');
+                formData.append('userId', getUserId());
+                formData.append('timestamp', new Date().toISOString());
+                
+                const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    body: formData,
+                    mode: 'cors'
+                });
+                
+                const result = await response.text();
+                showResult('formdata-vote-result', `Response (${response.status}):\n${result}`, response.ok ? 'success' : 'error');
+                
+            } catch (error) {
+                showResult('formdata-vote-result', `Error: ${error.message}`, 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Test FormData Vote Submission';
+            }
+        }
+
+        async function testDuplicateVote() {
+            const button = event.target;
+            button.disabled = true;
+            button.textContent = 'Testing...';
+            
+            try {
+                const featureId = 'duplicate-test-feature';
+                const userId = getUserId();
+                
+                showResult('duplicate-vote-result', 'Testing duplicate vote prevention...', 'info');
+                
+                // First vote
+                const voteData = {
+                    action: 'vote',
+                    data: {
+                        featureId: featureId,
+                        voteType: 'up',
+                        userId: userId,
+                        timestamp: new Date().toISOString()
+                    }
+                };
+                
+                const response1 = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(voteData),
+                    mode: 'cors'
+                });
+                
+                const result1 = await response1.text();
+                
+                // Second vote (duplicate)
+                const response2 = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(voteData),
+                    mode: 'cors'
+                });
+                
+                const result2 = await response2.text();
+                
+                showResult('duplicate-vote-result', 
+                    `First vote: ${result1}\n\nSecond vote (duplicate): ${result2}`, 
+                    'info');
+                
+            } catch (error) {
+                showResult('duplicate-vote-result', `Error: ${error.message}`, 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Test Duplicate Vote';
+            }
+        }
+
+        async function demoVote(featureId, voteType) {
+            const button = event.target;
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = '⏳';
+            
+            try {
+                showResult('demo-result', `Voting ${voteType} on ${featureId}...`, 'info');
+                
+                const voteData = {
+                    action: 'vote',
+                    data: {
+                        featureId: featureId,
+                        voteType: voteType,
+                        userId: getUserId(),
+                        timestamp: new Date().toISOString()
+                    }
+                };
+                
+                if (window.location.protocol === 'file:') {
+                    // Use form submission for file:// protocol
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = GOOGLE_APPS_SCRIPT_URL;
+                    form.target = '_blank';
+                    form.style.display = 'none';
+                    
+                    Object.keys(voteData.data).forEach(key => {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = key;
+                        input.value = voteData.data[key];
+                        form.appendChild(input);
+                    });
+                    
+                    const actionInput = document.createElement('input');
+                    actionInput.type = 'hidden';
+                    actionInput.name = 'action';
+                    actionInput.value = 'vote';
+                    form.appendChild(actionInput);
+                    
+                    document.body.appendChild(form);
+                    form.submit();
+                    
+                    setTimeout(() => document.body.removeChild(form), 1000);
+                    
+                    showResult('demo-result', 'Vote submitted via form! Check the new tab.', 'success');
+                } else {
+                    // Use fetch for http:// protocol
+                    const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(voteData),
+                        mode: 'cors'
+                    });
+                    
+                    const result = await response.text();
+                    showResult('demo-result', `Vote response: ${result}`, response.ok ? 'success' : 'error');
+                }
+                
+                // Update vote count in demo
+                const countElement = document.getElementById('vote-count-1');
+                let count = parseInt(countElement.textContent);
+                if (voteType === 'up') {
+                    count++;
+                } else {
+                    count = Math.max(count - 1, 0);
+                }
+                countElement.textContent = count;
+                
+            } catch (error) {
+                showResult('demo-result', `Error: ${error.message}`, 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        }
+
+        function showVoteStats() {
+            const userVotes = JSON.parse(localStorage.getItem('tripwisego-user-votes') || '{}');
+            const userId = getUserId();
+            const userVoteCount = userVotes[userId] ? Object.keys(userVotes[userId]).length : 0;
+            const totalUsers = Object.keys(userVotes).length;
+            
+            const stats = `Vote Statistics:
+- Current User ID: ${userId}
+- Current User Votes: ${userVoteCount}
+- Total Users Who Voted: ${totalUsers}
+- User Vote Data: ${JSON.stringify(userVotes[userId] || {}, null, 2)}
+- All Vote Data: ${JSON.stringify(userVotes, null, 2)}`;
+            
+            showResult('stats-result', stats, 'info');
+        }
+
+        function clearVoteData() {
+            localStorage.removeItem('tripwisego-user-votes');
+            showResult('stats-result', 'Vote data cleared!', 'success');
+        }
+    </script>
+</body>
+</html>

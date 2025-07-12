@@ -1,8 +1,13 @@
 const express = require('express');
-const { google } = require('googleapis');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const multer = require('multer');
 const path = require('path');
+
+// Import Supabase services
+const supabaseService = require('./supabase-service');
+const votingService = require('./voting-service');
+const fileUploadService = require('./file-upload-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,6 +28,14 @@ app.options('*', cors());
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
+// Configure multer for file uploads
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 10 * 1024 * 1024 // 10MB limit
+    }
+});
+
 // Serve static files
 app.use(express.static('.'));
 
@@ -32,100 +45,29 @@ app.use((req, res, next) => {
     next();
 });
 
-// Google Sheets configuration
-const SPREADSHEET_ID = '18_dYxomtS1cjaKi6hWTiNHuELOcjnunf-2qOotPML4s';
-const SHEET_NAME = 'Feature Request';
-
-// Initialize Google Sheets API
-async function initializeGoogleSheets() {
+// Initialize services on startup
+async function initializeServices() {
     try {
-        const auth = new google.auth.GoogleAuth({
-            keyFile: path.join(__dirname, 'service-account.json'),
-            scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-        });
+        console.log('Initializing Supabase services...');
 
-        const authClient = await auth.getClient();
-        const sheets = google.sheets({ version: 'v4', auth: authClient });
-        
-        return sheets;
-    } catch (error) {
-        console.error('Error initializing Google Sheets:', error);
-        throw error;
-    }
-}
-
-// Upload feature request to Google Sheets
-async function uploadToGoogleSheets(featureData) {
-    try {
-        const sheets = await initializeGoogleSheets();
-        
-        const values = [
-            [
-                featureData.id,
-                featureData.title,
-                featureData.description,
-                featureData.votes || 0,
-                featureData.date,
-                featureData.creatorId || 'anonymous'
-            ]
-        ];
-
-        const request = {
-            spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!A:F`,
-            valueInputOption: 'USER_ENTERED',
-            insertDataOption: 'INSERT_ROWS',
-            resource: {
-                values: values
-            }
-        };
-
-        const response = await sheets.spreadsheets.values.append(request);
-        console.log('Feature request uploaded successfully:', response.data);
-        return response.data;
-    } catch (error) {
-        console.error('Error uploading to Google Sheets:', error);
-        throw error;
-    }
-}
-
-// Read feature requests from Google Sheets
-async function readFromGoogleSheets() {
-    try {
-        const sheets = await initializeGoogleSheets();
-        
-        const request = {
-            spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!A2:F`,
-        };
-
-        const response = await sheets.spreadsheets.values.get(request);
-        const rows = response.data.values;
-        
-        if (!rows || rows.length === 0) {
-            return [];
+        // Initialize file upload service (create bucket if needed)
+        const bucketResult = await fileUploadService.initializeBucket();
+        if (!bucketResult.success) {
+            console.warn('File upload service initialization warning:', bucketResult.error);
         }
 
-        const features = rows.map(row => ({
-            id: row[0] || '',
-            title: row[1] || '',
-            description: row[2] || '',
-            votes: parseInt(row[3]) || 0,
-            date: row[4] || '',
-            creatorId: row[5] || 'anonymous'
-        }));
-
-        return features;
+        console.log('✅ Supabase services initialized successfully');
+        return true;
     } catch (error) {
-        console.error('Error reading from Google Sheets:', error);
-        throw error;
+        console.error('❌ Failed to initialize services:', error);
+        return false;
     }
 }
 
 // API Routes
 
 // Upload feature request
-app.post('/api/upload-feature', async (req, res) => {
+app.post('/api/upload-feature', upload.single('attachment'), async (req, res) => {
     try {
         console.log('Upload request received:', req.body);
 
@@ -163,31 +105,50 @@ app.post('/api/upload-feature', async (req, res) => {
             creatorId: creatorId || 'anonymous'
         };
 
-        console.log('Attempting to upload to Google Sheets:', featureData);
-        await uploadToGoogleSheets(featureData);
-        console.log('Successfully uploaded to Google Sheets');
+        console.log('Attempting to save to Supabase:', featureData);
+        const result = await supabaseService.addFeature(featureData);
+
+        if (!result.success) {
+            throw new Error(result.error);
+        }
+
+        console.log('Successfully saved to Supabase');
+
+        // Handle file upload if present
+        let fileUploadResult = null;
+        if (req.file) {
+            console.log('Processing file upload:', req.file.originalname);
+            fileUploadResult = await fileUploadService.uploadFile(
+                req.file,
+                result.data.id,
+                creatorId || 'anonymous'
+            );
+
+            if (!fileUploadResult.success) {
+                console.warn('File upload failed:', fileUploadResult.error);
+                // Don't fail the entire request if file upload fails
+            }
+        }
 
         res.json({
             success: true,
-            message: 'Feature request uploaded to Google Spreadsheet successfully',
-            data: featureData
+            message: 'Feature request saved successfully',
+            data: result.data,
+            fileUpload: fileUploadResult
         });
     } catch (error) {
         console.error('Error in upload-feature endpoint:', error);
 
         // Provide more specific error messages
-        let errorMessage = 'Failed to upload feature request to Google Spreadsheet';
+        let errorMessage = 'Failed to save feature request';
         let statusCode = 500;
 
-        if (error.message.includes('authentication')) {
-            errorMessage = 'Google Sheets authentication failed';
+        if (error.message.includes('network') || error.message.includes('timeout')) {
+            errorMessage = 'Network error connecting to database';
             statusCode = 503;
-        } else if (error.message.includes('quota')) {
-            errorMessage = 'Google Sheets API quota exceeded';
-            statusCode = 503;
-        } else if (error.message.includes('network') || error.message.includes('timeout')) {
-            errorMessage = 'Network error connecting to Google Sheets';
-            statusCode = 503;
+        } else if (error.message.includes('validation')) {
+            errorMessage = 'Validation error: ' + error.message;
+            statusCode = 400;
         }
 
         res.status(statusCode).json({
@@ -201,15 +162,201 @@ app.post('/api/upload-feature', async (req, res) => {
 // Get all feature requests
 app.get('/api/features', async (req, res) => {
     try {
-        const features = await readFromGoogleSheets();
-        res.json({ 
-            success: true, 
-            data: features 
+        const result = await supabaseService.getFeatures();
+
+        if (!result.success) {
+            throw new Error(result.error);
+        }
+
+        res.json({
+            success: true,
+            data: result.data
         });
     } catch (error) {
         console.error('Error in features endpoint:', error);
-        res.status(500).json({ 
+        res.status(500).json({
+            success: false,
             error: 'Failed to fetch feature requests',
+            details: error.message
+        });
+    }
+});
+
+// Vote on a feature
+app.post('/api/vote', async (req, res) => {
+    try {
+        const { featureId, voteType, userId } = req.body;
+
+        if (!featureId || !voteType || !userId) {
+            return res.status(400).json({
+                success: false,
+                error: 'featureId, voteType, and userId are required'
+            });
+        }
+
+        const result = await votingService.voteOnFeature(featureId, voteType, userId);
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error in vote endpoint:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to record vote',
+            details: error.message
+        });
+    }
+});
+
+// Update feature request
+app.put('/api/features/:id', async (req, res) => {
+    try {
+        const featureId = req.params.id;
+        const updates = req.body;
+
+        const result = await supabaseService.updateFeature(featureId, updates);
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error in update feature endpoint:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to update feature',
+            details: error.message
+        });
+    }
+});
+
+// Delete feature request
+app.delete('/api/features/:id', async (req, res) => {
+    try {
+        const featureId = req.params.id;
+
+        const result = await supabaseService.deleteFeature(featureId);
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error in delete feature endpoint:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to delete feature',
+            details: error.message
+        });
+    }
+});
+
+// Get files for a feature
+app.get('/api/features/:id/files', async (req, res) => {
+    try {
+        const featureId = req.params.id;
+
+        const result = await fileUploadService.getFeatureFiles(featureId);
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error in get feature files endpoint:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to get feature files',
+            details: error.message
+        });
+    }
+});
+
+// Upload file for a feature
+app.post('/api/features/:id/files', upload.single('file'), async (req, res) => {
+    try {
+        const featureId = req.params.id;
+        const { uploadedBy } = req.body;
+
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                error: 'No file provided'
+            });
+        }
+
+        const result = await fileUploadService.uploadFile(
+            req.file,
+            featureId,
+            uploadedBy || 'anonymous'
+        );
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error in upload file endpoint:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to upload file',
+            details: error.message
+        });
+    }
+});
+
+// Get user votes
+app.get('/api/users/:userId/votes', async (req, res) => {
+    try {
+        const userId = req.params.userId;
+
+        const result = await votingService.getUserVotes(userId);
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error in get user votes endpoint:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to get user votes',
+            details: error.message
+        });
+    }
+});
+
+// Get statistics
+app.get('/api/statistics', async (req, res) => {
+    try {
+        const [featuresStats, votingStats, uploadStats] = await Promise.all([
+            supabaseService.getStatistics(),
+            votingService.getVotingStatistics(),
+            fileUploadService.getUploadStatistics()
+        ]);
+
+        res.json({
+            success: true,
+            data: {
+                features: featuresStats.success ? featuresStats.data : null,
+                voting: votingStats.success ? votingStats.data : null,
+                uploads: uploadStats.success ? uploadStats.data : null,
+                timestamp: new Date().toISOString()
+            }
+        });
+    } catch (error) {
+        console.error('Error in statistics endpoint:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to get statistics',
             details: error.message
         });
     }
@@ -217,9 +364,9 @@ app.get('/api/features', async (req, res) => {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-    res.json({ 
-        status: 'OK', 
-        message: 'TripwiseGO Feature Request API is running',
+    res.json({
+        status: 'OK',
+        message: 'TripwiseGO Feature Request API with Supabase is running',
         timestamp: new Date().toISOString()
     });
 });
@@ -230,12 +377,22 @@ app.get('/', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-    console.log(`API endpoints:`);
-    console.log(`  POST /api/upload-feature - Upload a new feature request`);
+app.listen(PORT, async () => {
+    console.log(`🚀 TripwiseGO Feature Request Server is running on http://localhost:${PORT}`);
+    console.log(`📊 API endpoints:`);
+    console.log(`  POST /api/upload-feature - Upload a new feature request (with optional file)`);
     console.log(`  GET /api/features - Get all feature requests`);
+    console.log(`  PUT /api/features/:id - Update a feature request`);
+    console.log(`  DELETE /api/features/:id - Delete a feature request`);
+    console.log(`  POST /api/vote - Vote on a feature request`);
+    console.log(`  GET /api/features/:id/files - Get files for a feature`);
+    console.log(`  POST /api/features/:id/files - Upload file for a feature`);
+    console.log(`  GET /api/users/:userId/votes - Get user votes`);
+    console.log(`  GET /api/statistics - Get system statistics`);
     console.log(`  GET /api/health - Health check`);
+
+    // Initialize services
+    await initializeServices();
 });
 
 module.exports = app;
