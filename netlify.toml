@@ -5,10 +5,10 @@
 [build.environment]
   NODE_VERSION = "18"
 
-# Redirect API calls to external backend (you need to update this URL)
+# Keep only this redirect for Netlify Functions
 [[redirects]]
   from = "/api/*"
-  to = "https://your-backend-app.herokuapp.com/api/:splat"
+  to = "/.netlify/functions/:splat"
   status = 200
   force = true
 
@@ -19,5 +19,7 @@
   status = 200
 
 [functions]
-  # If you want to use Netlify Functions instead
   directory = "netlify/functions"
+
+
+
